@@ -1,4 +1,4 @@
-name: NIU charge alert
+name: NIU charge auto cut off
 
 on:
   schedule:
