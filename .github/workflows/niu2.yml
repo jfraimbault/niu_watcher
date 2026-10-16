@@ -50,23 +50,35 @@ jobs:
           read CHG A B < reading.txt
           MIN=$(( A < B ? A : B ))
           PREV=$(cat state.txt 2>/dev/null || echo idle)
-          echo "Lecture : en charge=$CHG | batterie A=${A}% | batterie B=${B}% | min=${MIN}% | seuil=${THRESHOLD}% | état précédent=$PREV"
+          echo "Lecture : isCharging=$CHG | A=${A}% | B=${B}% | min=${MIN}% | seuil=${THRESHOLD}% | état précédent=$PREV"
           CUT=false
-          if [ "$CHG" = "1" ] && [ "$MIN" -ge "$THRESHOLD" ]; then
-            NEW=notified
-            if [ "$PREV" != "notified" ]; then
-              CUT=true
-            fi
-          else
+          NOTIFY=false
+          if [ "$CHG" != "1" ]; then
             NEW=idle
+            REASON="pas en charge (isCharging=$CHG)"
+          elif [ "$MIN" -lt "$THRESHOLD" ]; then
+            NEW=idle
+            REASON="en charge mais sous le seuil (${MIN}% < ${THRESHOLD}%)"
+          else
+            NEW=notified
+            CUT=true
+            REASON="en charge et seuil atteint (${MIN}% >= ${THRESHOLD}%)"
+            if [ "$PREV" != "notified" ]; then
+              NOTIFY=true
+            fi
           fi
-          echo "Décision : couper=$CUT | nouvel état=$NEW"
+          echo "Décision : couper=$CUT | notifier=$NOTIFY | raison : $REASON"
           echo "$NEW" > state.txt
-          echo "cut=$CUT" >> "$GITHUB_OUTPUT"
-          echo "a=$A" >> "$GITHUB_OUTPUT"
-          echo "b=$B" >> "$GITHUB_OUTPUT"
+          {
+            echo "cut=$CUT"
+            echo "notify=$NOTIFY"
+            echo "a=$A"
+            echo "b=$B"
+            echo "reason=$REASON"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Couper la prise
+        id: cut
         if: steps.decide.outputs.cut == 'true'
         continue-on-error: true
         env:
@@ -78,7 +90,7 @@ jobs:
           python prise.py off
 
       - name: Notify
-        if: steps.decide.outputs.cut == 'true'
+        if: steps.decide.outputs.notify == 'true'
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC_NIU }}
           A: ${{ steps.decide.outputs.a }}
@@ -99,17 +111,18 @@ jobs:
           RESULT: ${{ steps.cut.outcome }}
           A: ${{ steps.decide.outputs.a }}
           B: ${{ steps.decide.outputs.b }}
+          REASON: ${{ steps.decide.outputs.reason }}
         run: |
           if [ "$CUT" != "true" ]; then
-            LINE="Batteries ${A}% / ${B}% : aucune coupure demandée"
+            LINE="Batteries ${A}% / ${B}% : pas de coupure, $REASON"
           elif [ "$RESULT" = "success" ]; then
             LINE="Batteries ${A}% / ${B}% : prise COUPÉE avec succès"
           else
-            LINE="Batteries ${A}% / ${B}% : coupure ÉCHOUÉE, notification « débrancher » envoyée"
+            LINE="Batteries ${A}% / ${B}% : coupure ÉCHOUÉE (retentée au prochain passage)"
           fi
           echo "$LINE"
           echo "$LINE" >> "$GITHUB_STEP_SUMMARY"
-          
+
       - name: Save state
         run: |
           git config user.name "github-actions[bot]"
