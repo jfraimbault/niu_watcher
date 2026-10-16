@@ -16,7 +16,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      THRESHOLD: "78"
+      THRESHOLD: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +47,8 @@ jobs:
           read CHG A B < reading.txt
           MIN=$(( A < B ? A : B ))
           PREV=$(cat state.txt 2>/dev/null || echo idle)
-          if [ "$CHG" = "1" ] && [ "$MIN" -ge "$THRESHOLD" ]; then
+          #if [ "$CHG" = "1" ] && [ "$MIN" -ge "$THRESHOLD" ]; then
+          if [ "$MIN" -ge "$THRESHOLD" ]; then
             NEW=notified
             if [ "$PREV" != "notified" ]; then
               curl -sS -H "Title: Scooter NIU" -d "Batteries à ${A}% et ${B}%, pense à débrancher" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
