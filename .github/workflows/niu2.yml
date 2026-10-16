@@ -1,4 +1,3 @@
-
 name: NIU charge alert
 
 on:
@@ -25,6 +24,10 @@ jobs:
         with:
           node-version: "20"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install niu-cloud-cli
         run: |
           git clone --recursive https://github.com/BlueAndi/niu-cloud-cli.git cli
@@ -41,24 +44,53 @@ jobs:
           node niu-cloud-cli.js get-battery-info --tokenFile token.json --sn "$NIU_SN" --json > info.json
           python3 -c "import json;d=json.load(open('info.json'));b=d['batteries'];print(d['isCharging'],b['compartmentA']['batteryCharging'],b['compartmentB']['batteryCharging'])" > ../reading.txt
 
-      - name: Decide and notify
-        env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC_NIU }}
+      - name: Decide
+        id: decide
         run: |
           read CHG A B < reading.txt
           MIN=$(( A < B ? A : B ))
           PREV=$(cat state.txt 2>/dev/null || echo idle)
+          CUT=false
           if [ "$CHG" = "1" ] && [ "$MIN" -ge "$THRESHOLD" ]; then
-          #if [ "$MIN" -ge "$THRESHOLD" ]; then
             NEW=notified
             if [ "$PREV" != "notified" ]; then
-              curl -sS -H "Title: Scooter NIU" -d "Batteries à ${A}% et ${B}%, pense à débrancher" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
+              CUT=true
             fi
           else
             NEW=idle
           fi
           echo "$NEW" > state.txt
+          echo "cut=$CUT" >> "$GITHUB_OUTPUT"
+          echo "a=$A" >> "$GITHUB_OUTPUT"
+          echo "b=$B" >> "$GITHUB_OUTPUT"
 
+            - name: Couper la prise
+        id: cut
+        if: steps.decide.outputs.cut == 'true'
+        continue-on-error: true
+        env:
+          TUYA_ACCESS_ID: ${{ secrets.TUYA_ACCESS_ID }}
+          TUYA_ACCESS_SECRET: ${{ secrets.TUYA_ACCESS_SECRET }}
+          TUYA_DEVICE_ID: ${{ secrets.TUYA_DEVICE_ID }}
+        run: |
+          pip install tinytuya
+          python prise.py off
+
+      - name: Notify
+        if: steps.decide.outputs.cut == 'true'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC_NIU }}
+          A: ${{ steps.decide.outputs.a }}
+          B: ${{ steps.decide.outputs.b }}
+          CUT_OK: ${{ steps.cut.outcome }}
+        run: |
+          if [ "$CUT_OK" = "success" ]; then
+            MSG="Batteries à ${A}% et ${B}%, prise coupée"
+          else
+            MSG="Batteries à ${A}% et ${B}%, pense à débrancher (coupure auto échouée)"
+          fi
+          curl -sS -H "Title: Scooter NIU" -d "$MSG" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
+          
       - name: Save state
         run: |
           git config user.name "github-actions[bot]"
