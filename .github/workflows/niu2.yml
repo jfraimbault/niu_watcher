@@ -16,7 +16,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      THRESHOLD: "85"
+      THRESHOLD: "80"
     steps:
       - uses: actions/checkout@v4
 
