@@ -50,6 +50,7 @@ jobs:
           read CHG A B < reading.txt
           MIN=$(( A < B ? A : B ))
           PREV=$(cat state.txt 2>/dev/null || echo idle)
+          echo "Lecture : en charge=$CHG | batterie A=${A}% | batterie B=${B}% | min=${MIN}% | seuil=${THRESHOLD}% | état précédent=$PREV"
           CUT=false
           if [ "$CHG" = "1" ] && [ "$MIN" -ge "$THRESHOLD" ]; then
             NEW=notified
@@ -59,6 +60,7 @@ jobs:
           else
             NEW=idle
           fi
+          echo "Décision : couper=$CUT | nouvel état=$NEW"
           echo "$NEW" > state.txt
           echo "cut=$CUT" >> "$GITHUB_OUTPUT"
           echo "a=$A" >> "$GITHUB_OUTPUT"
@@ -89,6 +91,24 @@ jobs:
             MSG="Batteries à ${A}% et ${B}%, pense à débrancher (coupure auto échouée)"
           fi
           curl -sS -H "Title: Scooter NIU" -d "$MSG" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
+
+      - name: Résumé
+        if: always()
+        env:
+          CUT: ${{ steps.decide.outputs.cut }}
+          RESULT: ${{ steps.cut.outcome }}
+          A: ${{ steps.decide.outputs.a }}
+          B: ${{ steps.decide.outputs.b }}
+        run: |
+          if [ "$CUT" != "true" ]; then
+            LINE="Batteries ${A}% / ${B}% : aucune coupure demandée"
+          elif [ "$RESULT" = "success" ]; then
+            LINE="Batteries ${A}% / ${B}% : prise COUPÉE avec succès"
+          else
+            LINE="Batteries ${A}% / ${B}% : coupure ÉCHOUÉE, notification « débrancher » envoyée"
+          fi
+          echo "$LINE"
+          echo "$LINE" >> "$GITHUB_STEP_SUMMARY"
           
       - name: Save state
         run: |
