@@ -64,8 +64,7 @@ jobs:
           echo "a=$A" >> "$GITHUB_OUTPUT"
           echo "b=$B" >> "$GITHUB_OUTPUT"
 
-            - name: Couper la prise
-        id: cut
+      - name: Couper la prise
         if: steps.decide.outputs.cut == 'true'
         continue-on-error: true
         env:
